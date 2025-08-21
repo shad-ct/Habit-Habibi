@@ -9,7 +9,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'habit_tracker_screen.dart';
 import 'special_days_screen.dart';
 import 'notification_service.dart';
+import 'notification_scheduler.dart';
 import 'todo_list_screen.dart';
+import 'home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +32,10 @@ void main() async {
         appId: "1:212372510139:web:68846e9882628edb3e609e",
         measurementId: "G-8B0RH4R9VB"),
   );
+
+  // Schedule all habit notifications after Firebase initialization
+  await NotificationScheduler.scheduleAllHabitNotifications();
+
   Animate.restartOnHotReload = true;
   runApp(const HabitHabibiApp());
 }
@@ -105,6 +111,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   static const List<Widget> _screens = <Widget>[
+    HomeScreen(),
     HabitTrackerScreen(),
     SpecialDaysScreen(),
     TodoListScreen(),
@@ -144,6 +151,11 @@ class _MainScreenState extends State<MainScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.check_circle_outline),
             activeIcon: Icon(Icons.check_circle),
