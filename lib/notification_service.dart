@@ -68,6 +68,24 @@ class NotificationService {
 
     tz.initializeTimeZones();
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    // --- DEBUGGING: Check if channels are created ---
+    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImplementation != null) {
+      final List<AndroidNotificationChannel>? channels =
+          await androidImplementation.getNotificationChannels();
+      if (channels != null) {
+        print('Notification channels found:');
+        for (var channel in channels) {
+          print('- ${channel.id}: ${channel.name}');
+        }
+      } else {
+        print('No notification channels found.');
+      }
+    }
+    // --- END DEBUGGING ---
   }
 
   // --- REQUEST PERMISSIONS ---
