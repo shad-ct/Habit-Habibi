@@ -1,5 +1,5 @@
 // home_screen.dart
-// Android-optimized home page with consistent color theme and improved calendar UI
+// Android-optimized home page with larger vertical calendar displays
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -82,77 +82,65 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(
-                    daysToShow,
-                    (index) {
-                      final date =
-                          now.subtract(Duration(days: daysToShow - 1 - index));
-                      final dayName = isWeekly
-                          ? [
-                              'M',
-                              'T',
-                              'W',
-                              'T',
-                              'F',
-                              'S',
-                              'S'
-                            ][date.weekday - 1]
-                          : date.day.toString();
-
-                      final isCompleted = habits
-                          .any((habit) => habit['isCompletedToday'] == true);
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: isCompleted
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.surfaceVariant,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isCompleted
-                                      ? theme.colorScheme.primary
-                                      : theme.colorScheme.outline
-                                          .withOpacity(0.3),
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  dayName,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: isCompleted
-                                        ? theme.colorScheme.onPrimary
-                                        : theme.colorScheme.onSurface,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              width: 4,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: isCompleted
-                                    ? theme.colorScheme.primary
-                                    : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+              // Calendar grid
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: isWeekly ? 7 : 7,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.2,
                 ),
+                itemCount: daysToShow,
+                itemBuilder: (context, index) {
+                  final date =
+                      now.subtract(Duration(days: daysToShow - 1 - index));
+                  final dayName = isWeekly
+                      ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'][date.weekday - 1]
+                      : date.day.toString();
+
+                  final isCompleted =
+                      habits.any((habit) => habit['isCompletedToday'] == true);
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: isCompleted
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isCompleted
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.outline.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          dayName,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: isCompleted
+                                ? theme.colorScheme.onPrimary
+                                : theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (!isWeekly && daysToShow > 7)
+                          Text(
+                            date.day.toString(),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: isCompleted
+                                  ? theme.colorScheme.onPrimary
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 12),
               Container(
