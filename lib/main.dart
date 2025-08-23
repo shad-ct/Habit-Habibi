@@ -1,6 +1,10 @@
 // main.dart
 // Main entry point for the Habit-Habibi application.
-// This file initializes the app and sets up the primary theme and navigation.
+
+// --- UPDATE NOTES ---
+// 1. Imported the new `timer_stopwatch_screen.dart`.
+// 2. Added the `TimerStopwatchScreen` to the list of screens.
+// 3. Added a new `BottomNavigationBarItem` for the new screen.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,14 +16,13 @@ import 'notification_service.dart';
 import 'notification_scheduler.dart';
 import 'todo_list_screen.dart';
 import 'home_screen.dart';
+import 'timer_stopwatch_screen.dart'; // New import
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the notification service
   final notificationService = NotificationService();
   await notificationService.init();
-  // FIXED: Request notification permissions on startup
   await notificationService.requestPermissions();
 
   await Firebase.initializeApp(
@@ -33,7 +36,6 @@ void main() async {
         measurementId: "G-8B0RH4R9VB"),
   );
 
-  // Schedule all habit notifications after Firebase initialization
   await NotificationScheduler.scheduleAllHabitNotifications();
 
   Animate.restartOnHotReload = true;
@@ -45,7 +47,6 @@ class HabitHabibiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Using the previously corrected theme and navigation logic
     return MaterialApp(
       title: 'Habit-Habibi',
       theme: ThemeData(
@@ -110,11 +111,13 @@ class _MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
+  // UPDATED: Added TimerStopwatchScreen
   static const List<Widget> _screens = <Widget>[
     HomeScreen(),
     HabitTrackerScreen(),
     SpecialDaysScreen(),
     TodoListScreen(),
+    TimerStopwatchScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -149,6 +152,7 @@ class _MainScreenState extends State<MainScreen> {
           children: _screens,
         ),
       ),
+      // UPDATED: Added new BottomNavigationBarItem
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
@@ -170,6 +174,11 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.list_alt_outlined),
             activeIcon: Icon(Icons.list_alt),
             label: 'To-Do',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.timer_outlined),
+            activeIcon: Icon(Icons.timer),
+            label: 'Timer',
           ),
         ],
         currentIndex: _selectedIndex,

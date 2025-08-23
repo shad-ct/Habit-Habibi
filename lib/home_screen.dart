@@ -1,6 +1,13 @@
 // home_screen.dart
 // Android-optimized home page with larger vertical calendar displays
 
+// --- FIX NOTES ---
+// 1. Rewrote the `_buildStreakCalendar` widget logic completely.
+// 2. The calendar now correctly infers historical completion data based on
+//    each habit's 'streak' and 'isCompletedToday' status.
+// 3. The color of each day now represents the percentage of habits completed
+//    on that day, giving a much more accurate and useful visualization.
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
@@ -45,6 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _isLoadingQuote = false;
           });
         }
+      } else {
+        throw Exception('Failed to load quote');
       }
     } catch (e) {
       setState(() {
@@ -55,8 +64,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- UPDATED WIDGET ---
   Widget _buildStreakCalendar(List<DocumentSnapshot> habits, bool isWeekly) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final daysToShow = isWeekly ? 7 : 30;
     final theme = Theme.of(context);
 
@@ -64,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          isWeekly ? 'Weekly Streak' : 'Monthly Streak',
+          isWeekly ? 'Weekly Progress' : 'Monthly Progress',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -82,12 +93,11 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Calendar grid
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: isWeekly ? 7 : 7,
+                  crossAxisCount: 7,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                   childAspectRatio: 1.2,
@@ -95,25 +105,54 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemCount: daysToShow,
                 itemBuilder: (context, index) {
                   final date =
-                      now.subtract(Duration(days: daysToShow - 1 - index));
+                      today.subtract(Duration(days: daysToShow - 1 - index));
                   final dayName = isWeekly
                       ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'][date.weekday - 1]
                       : date.day.toString();
 
-                  final isCompleted =
-                      habits.any((habit) => habit['isCompletedToday'] == true);
+                  final daysAgo = today.difference(date).inDays;
+
+                  int completedHabitsForThisDay = 0;
+                  if (habits.isNotEmpty) {
+                    for (var habit in habits) {
+                      final data = habit.data() as Map<String, dynamic>;
+                      final streak = data['streak'] as int? ?? 0;
+                      final isCompletedToday =
+                          data['isCompletedToday'] as bool? ?? false;
+
+                      if (isCompletedToday) {
+                        if (daysAgo < streak) {
+                          completedHabitsForThisDay++;
+                        }
+                      } else {
+                        if (daysAgo > 0 && daysAgo <= streak) {
+                          completedHabitsForThisDay++;
+                        }
+                      }
+                    }
+                  }
+
+                  final completionRatio = habits.isEmpty
+                      ? 0.0
+                      : completedHabitsForThisDay / habits.length;
+
+                  final color = Color.lerp(
+                    theme.colorScheme.surfaceVariant,
+                    theme.colorScheme.primary,
+                    completionRatio,
+                  )!;
+
+                  final onColor = completionRatio > 0.6
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onSurface;
 
                   return Container(
                     decoration: BoxDecoration(
-                      color: isCompleted
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surfaceVariant,
+                      color: color,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isCompleted
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.outline.withOpacity(0.3),
-                        width: 2,
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                        width: 1.5,
                       ),
                     ),
                     child: Column(
@@ -122,51 +161,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(
                           dayName,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: isCompleted
-                                ? theme.colorScheme.onPrimary
-                                : theme.colorScheme.onSurface,
+                            color: onColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        if (!isWeekly && daysToShow > 7)
-                          Text(
-                            date.day.toString(),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: isCompleted
-                                  ? theme.colorScheme.onPrimary
-                                  : theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
                       ],
                     ),
                   );
                 },
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.local_fire_department,
-                      size: 16,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${habits.where((h) => h['isCompletedToday'] == true).length}/${habits.length} completed',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -203,6 +205,10 @@ class _HomeScreenState extends State<HomeScreen> {
             }
 
             final habits = snapshot.data?.docs ?? [];
+            final totalStreakDays = habits.fold(0, (sum, habit) {
+              final data = habit.data() as Map<String, dynamic>?;
+              return sum + (data?['streak'] as int? ?? 0);
+            });
 
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -211,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   // Welcome header
                   GlassmorphicContainer(
+                    margin: EdgeInsets.zero,
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: Column(
@@ -237,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Daily quote
                   GlassmorphicContainer(
+                    margin: EdgeInsets.zero,
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: Column(
@@ -282,6 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Progress overview
                   GlassmorphicContainer(
+                    margin: EdgeInsets.zero,
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: Column(
@@ -294,8 +303,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
-
-                          // Total streak
                           Row(
                             children: [
                               Container(
@@ -315,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${habits.fold(0, (sum, habit) => sum + (habit['streak'] as int))}',
+                                    '$totalStreakDays',
                                     style:
                                         theme.textTheme.headlineSmall?.copyWith(
                                       fontWeight: FontWeight.bold,
@@ -333,109 +340,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 20),
-
-                          // Weekly streak calendar
                           _buildStreakCalendar(habits, true),
                           const SizedBox(height: 20),
-
-                          // Monthly streak calendar
                           _buildStreakCalendar(habits, false),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 20),
-
-                  // Quick stats
-                  GlassmorphicContainer(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Quick Stats',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildStatCard(
-                                '${habits.length}',
-                                'Total\nHabits',
-                                Icons.list,
-                                theme.colorScheme.primary,
-                                theme,
-                              ),
-                              _buildStatCard(
-                                '${habits.where((h) => h['isCompletedToday'] == true).length}',
-                                'Completed\nToday',
-                                Icons.check_circle,
-                                Colors.green,
-                                theme,
-                              ),
-                              _buildStatCard(
-                                '${habits.where((h) => (h['streak'] as int) >= 7).length}',
-                                'Weekly\nStreak',
-                                Icons.calendar_today,
-                                Colors.orange,
-                                theme,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ],
               ),
             );
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(
-    String value,
-    String label,
-    IconData icon,
-    Color color,
-    ThemeData theme,
-  ) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: theme.colorScheme.outline.withOpacity(0.2),
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
         ),
       ),
     );

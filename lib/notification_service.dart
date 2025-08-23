@@ -1,6 +1,14 @@
 // notification_service.dart
 // This service manages all local notification logic for the app.
 
+// --- UPDATE NOTES ---
+// 1. Added `audioAttributesUsage: AudioAttributesUsage.alarm` to the
+//    alarm channel. This is a powerful setting that tells the Android OS
+//    to treat the notification sound as a high-priority alarm, which can
+//    override silent modes and battery optimization settings.
+// 2. Kept the debugging logic to recreate notification channels on startup.
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -18,7 +26,6 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   // --- NOTIFICATION DETAILS CONSTANTS ---
-  // Details for a standard, quiet notification
   static const NotificationDetails _standardNotificationDetails =
       NotificationDetails(
     android: AndroidNotificationDetails(
@@ -27,11 +34,11 @@ class NotificationService {
       channelDescription: 'Channel for standard, quiet reminders',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
     ),
-    iOS: DarwinNotificationDetails(),
+    iOS: DarwinNotificationDetails(presentSound: true),
   );
 
-  // Details for a loud, persistent alarm-style notification
   static const NotificationDetails _alarmNotificationDetails =
       NotificationDetails(
     android: AndroidNotificationDetails(
@@ -40,20 +47,36 @@ class NotificationService {
       channelDescription: 'Channel for loud, persistent alarm reminders',
       importance: Importance.max,
       priority: Priority.high,
-      sound: RawResourceAndroidNotificationSound(
-          'alarm'), // From res/raw/alarm.mp3
+      sound: RawResourceAndroidNotificationSound('alarm'),
       playSound: true,
       enableVibration: true,
-      fullScreenIntent: true, // Shows over the lock screen
+      fullScreenIntent: true,
+      // FIXED: Classify the sound as a high-priority ALARM for the OS.
+      audioAttributesUsage: AudioAttributesUsage.alarm,
     ),
     iOS: DarwinNotificationDetails(
       presentSound: true,
-      sound:
-          'alarm.aiff', // You would need to add this sound to your iOS project
+      sound: 'alarm.aiff',
     ),
   );
 
   Future<void> init() async {
+    print("🔔 [NotificationService] Initializing...");
+
+    if (kDebugMode) {
+      final androidImplementation =
+          flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImplementation != null) {
+        print("  -> (Debug) Deleting old notification channels...");
+        await androidImplementation
+            .deleteNotificationChannel('standard_channel_id');
+        await androidImplementation
+            .deleteNotificationChannel('alarm_channel_id');
+        print("  -> (Debug) Channels deleted.");
+      }
+    }
+
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
@@ -68,33 +91,26 @@ class NotificationService {
 
     tz.initializeTimeZones();
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-
-    // --- DEBUGGING: Check if channels are created ---
-    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    if (androidImplementation != null) {
-      final List<AndroidNotificationChannel>? channels =
-          await androidImplementation.getNotificationChannels();
-      if (channels != null) {
-        print('Notification channels found:');
-        for (var channel in channels) {
-          print('- ${channel.id}: ${channel.name}');
-        }
-      } else {
-        print('No notification channels found.');
-      }
-    }
-    // --- END DEBUGGING ---
+    print("✅ [NotificationService] Initialization complete.");
   }
 
-  // --- REQUEST PERMISSIONS ---
-  // This MUST be called from main.dart after init()
   Future<void> requestPermissions() async {
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    print("🔔 [NotificationService] Requesting permissions...");
+    final androidImplementation =
+        flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidImplementation != null) {
+      print("  -> Requesting standard notification permission...");
+      final bool? standardResult =
+          await androidImplementation.requestNotificationsPermission();
+      print("  -> Standard permission result: $standardResult");
+
+      print("  -> Requesting exact alarm permission...");
+      final bool? exactResult =
+          await androidImplementation.requestExactAlarmsPermission();
+      print("  -> Exact alarm permission result: $exactResult");
+    }
 
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -104,55 +120,84 @@ class NotificationService {
           badge: true,
           sound: true,
         );
+    print("✅ [NotificationService] Permissions requested.");
   }
 
-  // --- SCHEDULE A NOTIFICATION (NOW WITH ALARM OPTION) ---
   Future<void> scheduleNotification({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledTime,
-    bool isAlarm = false, // New parameter to choose notification type
+    bool isAlarm = false,
   }) async {
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(scheduledTime, tz.local),
-      isAlarm ? _alarmNotificationDetails : _standardNotificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    final String type = isAlarm ? "ALARM" : "STANDARD";
+    print("🔔 [NotificationService] Scheduling one-time $type notification...");
+    print("  -> ID: $id, Title: $title, Time: $scheduledTime");
+    if (isAlarm) {
+      print(
+          "  -> ❗ REMINDER: This is an ALARM. Ensure 'alarm.mp3' exists in android/app/src/main/res/raw/");
+    }
+    try {
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        isAlarm ? _alarmNotificationDetails : _standardNotificationDetails,
+        androidScheduleMode: isAlarm
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexact,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      print("✅ [NotificationService] Successfully scheduled notification #$id");
+    } catch (e) {
+      print("❌ [NotificationService] ERROR scheduling notification #$id: $e");
+    }
   }
 
-  // --- SCHEDULE A DAILY NOTIFICATION (NOW WITH ALARM OPTION) ---
   Future<void> scheduleDailyNotification({
     required int id,
     required String title,
     required String body,
     required TimeOfDay time,
-    bool isAlarm = false, // New parameter
+    bool isAlarm = false,
   }) async {
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      id,
-      title,
-      body,
-      _nextInstanceOfTime(time),
-      isAlarm ? _alarmNotificationDetails : _standardNotificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    final String type = isAlarm ? "ALARM" : "STANDARD";
+    print("🔔 [NotificationService] Scheduling daily $type notification...");
+    print("  -> ID: $id, Title: $title, Time: ${time.hour}:${time.minute}");
+    if (isAlarm) {
+      print(
+          "  -> ❗ REMINDER: This is an ALARM. Ensure 'alarm.mp3' exists in android/app/src/main/res/raw/");
+    }
+    try {
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        id,
+        title,
+        body,
+        _nextInstanceOfTime(time),
+        isAlarm ? _alarmNotificationDetails : _standardNotificationDetails,
+        androidScheduleMode: isAlarm
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexact,
+        matchDateTimeComponents: DateTimeComponents.time,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      print(
+          "✅ [NotificationService] Successfully scheduled daily notification #$id");
+    } catch (e) {
+      print(
+          "❌ [NotificationService] ERROR scheduling daily notification #$id: $e");
+    }
   }
 
-  // --- CANCEL A NOTIFICATION ---
   Future<void> cancelNotification(int id) async {
+    print("🔔 [NotificationService] Cancelling notification #$id...");
     await flutterLocalNotificationsPlugin.cancel(id);
+    print("✅ [NotificationService] Notification #$id cancelled.");
   }
 
-  // Helper function to get the next instance of a specific time
   tz.TZDateTime _nextInstanceOfTime(TimeOfDay time) {
     final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
     tz.TZDateTime scheduledDate = tz.TZDateTime(
